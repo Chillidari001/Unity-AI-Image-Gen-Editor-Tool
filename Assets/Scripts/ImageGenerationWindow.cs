@@ -1,6 +1,7 @@
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
+using UnityEditor.UIElements;
 //using OpenAI_API;
 //using OpenAI_API.Chat;
 using System.Collections.Generic;
@@ -19,6 +20,7 @@ using System.IO;
 using NUnit.Framework;
 using System.Security.Cryptography;
 using System.Net.Sockets;
+using UnityEditor.Search;
 
 public class ImageGenerationWindow : EditorWindow
 {
@@ -37,13 +39,18 @@ public class ImageGenerationWindow : EditorWindow
     Button save_api_key_button;
     TextField image_generation_prompt;
     Button generate_button;
+    Texture2D selected_texture;
     Texture2D image_texture;
     Image generated_image;
     int image_x;
     int image_y;
     string user_input;
-    IntegerField image_x_input;
-    IntegerField image_y_input;
+    private enum tool_function
+    {
+        Text_To_Image,
+        Image_To_Image
+    }
+    tool_function chosen_function = tool_function.Text_To_Image;
     EnumField image_resolution;
     /*        ImageSize.1024
             ImageSize._256
@@ -66,6 +73,23 @@ public class ImageGenerationWindow : EditorWindow
     DropdownField image_size;
     string chosen_image_size = "1024x1024";
     Button save_button;
+    EnumField function_choice;
+    UnityEditor.UIElements.ObjectField base_image_select;
+    Image base_image;
+    EnumField image_to_image_size;
+    public enum Image_Size
+    {
+        Small,
+        Medium,
+        Large
+    }
+    ImageSize size = ImageSize.Small;
+
+    UnityEditor.UIElements.ObjectField mask_image_select;
+    Texture2D mask_texture;
+
+    Toolbar toolbar;
+    bool help_selected = false;
 
     private OpenAIClient api;
     //private OpenAIAPI api;
@@ -111,11 +135,14 @@ public class ImageGenerationWindow : EditorWindow
         Debug.Log(Application.persistentDataPath);
     }
 
-    [MenuItem("Tools/Image Generator")]
+    [MenuItem("AI Tools/Image Generator")]
     public static void ShowWindow()
     {
         ImageGenerationWindow wnd = GetWindow<ImageGenerationWindow>();
         wnd.titleContent = new GUIContent("Image Generator");
+        ImageGenerationWindow tabs = (ImageGenerationWindow)GetWindow(typeof(ImageGenerationWindow));
+        tabs.minSize = new Vector2(400, 400);
+        tabs.maxSize = new Vector2(1920, 1080);
     }
 
     public void CreateGUI()
@@ -123,9 +150,13 @@ public class ImageGenerationWindow : EditorWindow
         // Each editor window contains a root VisualElement object
         root = rootVisualElement;
 
+        toolbar = new Toolbar();
+        var button = new ToolbarButton(() => { help_selected = false; }) { text = "Image Generator" };
+        toolbar.Add(button);
+        var button2 = new ToolbarButton(() => { help_selected = true; }) { text = "Help" };
+        toolbar.Add(button2);
+        root.Add(toolbar);
         // VisualElements objects can contain other VisualElement following a tree hierarchy.
-        VisualElement label = new Label("Image Generator");
-        root.Add(label);
 
         // Instantiate UXML
         //VisualElement labelFromUXML = m_VisualTreeAsset.Instantiate();
@@ -152,9 +183,36 @@ public class ImageGenerationWindow : EditorWindow
         root.Add(save_api_key_button);
         save_api_key_button.clicked += UseAPIKey;
 
+        function_choice = new EnumField("Function Choice", tool_function.Text_To_Image);
+        root.Add(function_choice);
+        function_choice.RegisterCallback<ChangeEvent<Enum>>((evt) =>
+        {
+            function_choice.value = evt.newValue;
+            chosen_function = (tool_function)function_choice.value;
+            Debug.Log(chosen_function);
+        });
+
+        base_image_select = new UnityEditor.UIElements.ObjectField("Base Image Select");
+        base_image_select.objectType = typeof(Texture2D);
+        root.Add(base_image_select);
+        base_image_select.RegisterValueChangedCallback<UnityEngine.Object>(ImageSelected);
+
+        base_image = new Image();
+        //generated_image.style.backgroundImage = new Texture2D(image_x, image_y);
+        base_image.style.backgroundImage = AssetDatabase.LoadAssetAtPath<Texture2D>("Assets/placeholder.png");
+        base_image.style.height = 400f;
+        base_image.style.width = 500f;
+        //generated_image.scaleMode = ScaleMode.ScaleToFit;
+        root.Add(base_image);
+
+        mask_image_select = new UnityEditor.UIElements.ObjectField("Mask Image Select");
+        mask_image_select.objectType = typeof(Texture2D);
+        root.Add(mask_image_select);
+        mask_image_select.RegisterValueChangedCallback<UnityEngine.Object>(MaskSelected);
+
         image_generation_prompt = new TextField("Prompt:");
         image_generation_prompt.multiline = true;
-        image_generation_prompt.style.height = 100f;
+        image_generation_prompt.style.height = 50f;
         root.Add(image_generation_prompt);
 
         image_resolution = new EnumField("Image Resolution", image_quality.Standard);
@@ -165,12 +223,6 @@ public class ImageGenerationWindow : EditorWindow
             chosen_quality = (image_quality)image_resolution.value;
             Debug.Log(chosen_quality);
         });
-
-        /*image_x_input = new IntegerField("Image Width:");
-        root.Add(image_x_input);
-
-        image_y_input = new IntegerField("Image Height:");
-        root.Add(image_y_input);*/
 
         num_of_images = new DropdownField("Number of images", new List<string> { "1", "2", "3", "4" }, 0);
         num_of_images.index = 0;
@@ -189,6 +241,16 @@ public class ImageGenerationWindow : EditorWindow
             chosen_image_size = image_size.value;
             Debug.Log(chosen_image_size);
         });
+        
+        image_to_image_size = new EnumField("Image Size", ImageSize.Small);
+        root.Add(image_to_image_size);
+        image_to_image_size.RegisterCallback<ChangeEvent<Enum>>((evt) =>
+        {
+            image_to_image_size.value = evt.newValue;
+            size = (ImageSize)image_to_image_size.value;
+            Debug.Log(size);
+        });
+        
         generate_button = new Button();
         generate_button.text = "Generate Image";
         generate_button.style.height = 40;
@@ -209,6 +271,25 @@ public class ImageGenerationWindow : EditorWindow
         root.Add(save_button);
         save_button.clicked += SaveImage;
 
+    }
+
+    public void OnGUI()
+    {
+
+        //num_of_tabs = GUILayout.Toolbar(num_of_tabs, tab_names);
+        /*float padding = 100;
+        Rect area = new Rect(padding, padding,
+             position.width - padding * 2f, position.height - padding * 2f);
+
+        GUILayout.BeginArea(area);
+       
+        GUILayout.EndArea();*/
+
+        if(help_selected)
+        {
+            GUILayout.Label("TEST");
+            GUILayout.FlexibleSpace();
+        }
     }
 
     private async void GenerateImage()
@@ -243,60 +324,83 @@ public class ImageGenerationWindow : EditorWindow
 
             /*var result = await api.ImageGenerations.CreateImageAsync(new ImageGenerationRequest("fat cat", 1, ImageSize._512));
             Debug.Log(result.Data[0].Url);*/
-
-            //var request = new ImageGenerationRequest(user_input, Model.DallE_3, 1, null, responseFormat: ResponseFormat.Url, "256x256", null, null);
-            if (chosen_quality == image_quality.Standard)
+            if(chosen_function == tool_function.Text_To_Image)
             {
-                var request = new ImageGenerationRequest(user_input, OpenAI.Models.Model.DallE_3, 1, "standard", responseFormat: ResponseFormat.Url, chosen_image_size);
-                var imageResults = await api.ImagesEndPoint.GenerateImageAsync(request);
-
-                foreach (var result in imageResults)
+                //var request = new ImageGenerationRequest(user_input, Model.DallE_3, 1, null, responseFormat: ResponseFormat.Url, "256x256", null, null);
+                if (chosen_quality == image_quality.Standard)
                 {
-                    Debug.Log(result.ToString());
-                    string string_result = result.ToString();
-                    //string path = string_result.Substring(string_result.IndexOf("download_cache"));
-                    //var full_path = Path.Combine(Application.persistentDataPath, path);*/
-                    string path = string_result.Substring(string_result.IndexOf("C:"));
-                    image_texture = new Texture2D(2, 2);
-                    ImageConversion.LoadImage(image_texture, File.ReadAllBytes(path));
-                    generated_image.style.backgroundImage = image_texture;
+                    var request = new ImageGenerationRequest(user_input, OpenAI.Models.Model.DallE_3, 1, "standard", responseFormat: ResponseFormat.Url, chosen_image_size);
+                    var imageResults = await api.ImagesEndPoint.GenerateImageAsync(request);
+
+                    foreach (var result in imageResults)
+                    {
+                        Debug.Log(result.ToString());
+                        string string_result = result.ToString();
+                        //string path = string_result.Substring(string_result.IndexOf("download_cache"));
+                        //var full_path = Path.Combine(Application.persistentDataPath, path);*/
+                        string path = string_result.Substring(string_result.IndexOf("C:"));
+                        image_texture = new Texture2D(2, 2);
+                        ImageConversion.LoadImage(image_texture, File.ReadAllBytes(path));
+                        generated_image.style.backgroundImage = image_texture;
+                    }
+                }
+                if (chosen_quality == image_quality.Highest)
+                {
+                    var request = new ImageGenerationRequest(user_input, OpenAI.Models.Model.DallE_3, 1, "hd", responseFormat: ResponseFormat.Url, chosen_image_size);
+                    var imageResults = await api.ImagesEndPoint.GenerateImageAsync(request);
+
+                    foreach (var result in imageResults)
+                    {
+                        Debug.Log(result.ToString());
+                        //DownloadImage(result);
+                        //generated_image.style.backgroundImage = AssetDatabase.LoadAssetAtPath<Texture2D>(result);
+                        //generated_image.style.width = 1024;
+                        //generated_image.style.height = 1024;
+                        /*var final_result = result.ToString();
+                        string remove_text = "E:\\LearningProjects\\AT\\AT2\\file:\\";
+                        final_result.Replace(remove_text, "");*/
+
+                        //var raw_data = System.IO.File.ReadAllBytes(result.ToString());
+                        //Texture2D tex = new Texture2D(2, 2);
+                        //ImageConversion.LoadImage(tex, File.ReadAllBytes(result));
+                        //tex.LoadImage(File.ReadAllBytes(result));
+                        //generated_image.style.backgroundImage = tex;
+                        //Assert.IsNotNull(generated_image.style.backgroundImage);
+
+                        //var bytes = System.IO.File.LoadAllBytes(result);
+
+                        Debug.Log(result.ToString());
+                        string string_result = result.ToString();
+                        //string path = string_result.Substring(string_result.IndexOf("download_cache"));
+                        //var full_path = Path.Combine(Application.persistentDataPath, path);*/
+                        string path = string_result.Substring(string_result.IndexOf("C:"));
+                        image_texture = new Texture2D(2, 2);
+                        ImageConversion.LoadImage(image_texture, File.ReadAllBytes(path));
+                        generated_image.style.backgroundImage = image_texture;
+                    }
                 }
             }
-            if (chosen_quality == image_quality.Highest)
+            if(chosen_function == tool_function.Image_To_Image)
             {
-                var request = new ImageGenerationRequest(user_input, OpenAI.Models.Model.DallE_3, 1, "hd", responseFormat: ResponseFormat.Url, chosen_image_size);
-                var imageResults = await api.ImagesEndPoint.GenerateImageAsync(request);
-
-                foreach (var result in imageResults)
+                if(chosen_quality == image_quality.Standard)
                 {
-                    Debug.Log(result.ToString());
-                    //DownloadImage(result);
-                    //generated_image.style.backgroundImage = AssetDatabase.LoadAssetAtPath<Texture2D>(result);
-                    //generated_image.style.width = 1024;
-                    //generated_image.style.height = 1024;
-                    /*var final_result = result.ToString();
-                    string remove_text = "E:\\LearningProjects\\AT\\AT2\\file:\\";
-                    final_result.Replace(remove_text, "");*/
+                    var request = new ImageEditRequest(Path.GetFullPath(AssetDatabase.GetAssetPath(selected_texture)), Path.GetFullPath(AssetDatabase.GetAssetPath(mask_texture)), user_input, 1, size, null, responseFormat: ResponseFormat.Url, OpenAI.Models.Model.DallE_2);
+                    var imageResults = await api.ImagesEndPoint.CreateImageEditAsync(request);
 
-                    //var raw_data = System.IO.File.ReadAllBytes(result.ToString());
-                    //Texture2D tex = new Texture2D(2, 2);
-                    //ImageConversion.LoadImage(tex, File.ReadAllBytes(result));
-                    //tex.LoadImage(File.ReadAllBytes(result));
-                    //generated_image.style.backgroundImage = tex;
-                    //Assert.IsNotNull(generated_image.style.backgroundImage);
-
-                    //var bytes = System.IO.File.LoadAllBytes(result);
-
-                    Debug.Log(result.ToString());
-                    string string_result = result.ToString();
-                    //string path = string_result.Substring(string_result.IndexOf("download_cache"));
-                    //var full_path = Path.Combine(Application.persistentDataPath, path);*/
-                    string path = string_result.Substring(string_result.IndexOf("C:"));
-                    image_texture = new Texture2D(2, 2);
-                    ImageConversion.LoadImage(image_texture, File.ReadAllBytes(path));
-                    generated_image.style.backgroundImage = image_texture;
+                    foreach (var result in imageResults)
+                    {
+                        Debug.Log(result.ToString());
+                        string string_result = result.ToString();
+                        //string path = string_result.Substring(string_result.IndexOf("download_cache"));
+                        //var full_path = Path.Combine(Application.persistentDataPath, path);*/
+                        string path = string_result.Substring(string_result.IndexOf("C:"));
+                        image_texture = new Texture2D(2, 2);
+                        ImageConversion.LoadImage(image_texture, File.ReadAllBytes(path));
+                        generated_image.style.backgroundImage = image_texture;
+                    }
                 }
             }
+            
         }
         if (chosen_api == api_choice.Stable_Diffusion)
         {
@@ -377,23 +481,98 @@ public class ImageGenerationWindow : EditorWindow
             generated_image.style.backgroundImage = ((DownloadHandlerTexture)request.downloadHandler).texture;
     }
 
+    private void ImageSelected(ChangeEvent<UnityEngine.Object> evt)
+    {
+        if(evt.newValue == null)
+        {
+            selected_texture = null;    
+            return;
+        }
+        var output_name = evt.newValue.name + "Modified";
+        selected_texture = evt.newValue as Texture2D;
+        base_image.style.backgroundImage = selected_texture;
+    }
+
+    private void MaskSelected(ChangeEvent<UnityEngine.Object> evt)
+    {
+        if (evt.newValue == null)
+        {
+            mask_texture = null;
+            return;
+        }
+        mask_texture = evt.newValue as Texture2D;
+    }
+
     public void Update()
     {
-        if (chosen_api == api_choice.Open_AI)
+        if(help_selected == false)
         {
-            image_resolution.style.display = DisplayStyle.Flex;
-            num_of_images.style.display = DisplayStyle.Flex;
-            image_size.style.display = DisplayStyle.Flex;
-            generate_button.style.display = DisplayStyle.Flex;
+            if (chosen_api == api_choice.Open_AI)
+            {
+                if (chosen_function == tool_function.Text_To_Image)
+                {
+                    API.style.display = DisplayStyle.Flex;
+                    api_key_input.style.display = DisplayStyle.Flex;
+                    save_api_key_button.style.display = DisplayStyle.Flex;
+                    function_choice.style.display = DisplayStyle.Flex;
+                    image_generation_prompt.style.display = DisplayStyle.Flex;
+                    base_image_select.style.display = DisplayStyle.None;
+                    base_image.style.display = DisplayStyle.None;
+                    mask_image_select.style.display = DisplayStyle.None;
+                    image_resolution.style.display = DisplayStyle.Flex;
+                    num_of_images.style.display = DisplayStyle.Flex;
+                    image_size.style.display = DisplayStyle.Flex;
+                    image_to_image_size.style.display = DisplayStyle.None;
+                    generate_button.style.display = DisplayStyle.Flex;
+                    generated_image.style.display = DisplayStyle.Flex;
+                    save_button.style.display = DisplayStyle.Flex;
+                }
+                if (chosen_function == tool_function.Image_To_Image)
+                {
+                    API.style.display = DisplayStyle.Flex;
+                    api_key_input.style.display = DisplayStyle.Flex;
+                    save_api_key_button.style.display = DisplayStyle.Flex;
+                    function_choice.style.display = DisplayStyle.Flex;
+                    image_generation_prompt.style.display = DisplayStyle.Flex;
+                    base_image_select.style.display = DisplayStyle.Flex;
+                    base_image.style.display = DisplayStyle.Flex;
+                    mask_image_select.style.display = DisplayStyle.Flex;
+                    image_size.style.display = DisplayStyle.None;
+                    image_to_image_size.style.display = DisplayStyle.Flex;
+                    generate_button.style.display = DisplayStyle.Flex;
+                    generated_image.style.display = DisplayStyle.Flex;
+                    save_button.style.display = DisplayStyle.Flex;
+                }
+            }
+            else
+            {
+                image_resolution.style.display = DisplayStyle.None;
+                num_of_images.style.display = DisplayStyle.None;
+                image_size.style.display = DisplayStyle.None;
+                //generate_button.style.display = DisplayStyle.None;
+                //generated_image.style.display = DisplayStyle.None;
+            }
         }
-        else
+        
+        if(help_selected == true)
         {
+            API.style.display = DisplayStyle.None;
+            api_key_input.style.display = DisplayStyle.None;
+            save_api_key_button.style.display = DisplayStyle.None;
+            function_choice.style.display = DisplayStyle.None;
+            image_generation_prompt.style.display = DisplayStyle.None;
+            base_image_select.style.display = DisplayStyle.None;
+            base_image.style.display = DisplayStyle.None;
+            mask_image_select.style.display = DisplayStyle.None;
             image_resolution.style.display = DisplayStyle.None;
             num_of_images.style.display = DisplayStyle.None;
             image_size.style.display = DisplayStyle.None;
-            //generate_button.style.display = DisplayStyle.None;
-            //generated_image.style.display = DisplayStyle.None;
+            image_to_image_size.style.display = DisplayStyle.None;
+            generate_button.style.display = DisplayStyle.None;
+            generated_image.style.display = DisplayStyle.None;
+            save_button.style.display = DisplayStyle.None;
         }
+
     }
 
     public void UseAPIKey()
