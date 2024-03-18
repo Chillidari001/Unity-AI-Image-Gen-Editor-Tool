@@ -382,22 +382,19 @@ public class ImageGenerationWindow : EditorWindow
             }
             if(chosen_function == tool_function.Image_To_Image)
             {
-                if(chosen_quality == image_quality.Standard)
-                {
-                    var request = new ImageEditRequest(Path.GetFullPath(AssetDatabase.GetAssetPath(selected_texture)), Path.GetFullPath(AssetDatabase.GetAssetPath(mask_texture)), user_input, 1, size, null, responseFormat: ResponseFormat.Url, OpenAI.Models.Model.DallE_2);
-                    var imageResults = await api.ImagesEndPoint.CreateImageEditAsync(request);
+                var request = new ImageEditRequest(Path.GetFullPath(AssetDatabase.GetAssetPath(selected_texture)), Path.GetFullPath(AssetDatabase.GetAssetPath(mask_texture)), user_input, 1, size, null, responseFormat: ResponseFormat.Url, OpenAI.Models.Model.DallE_2);
+                var imageResults = await api.ImagesEndPoint.CreateImageEditAsync(request);
 
-                    foreach (var result in imageResults)
-                    {
-                        Debug.Log(result.ToString());
-                        string string_result = result.ToString();
-                        //string path = string_result.Substring(string_result.IndexOf("download_cache"));
-                        //var full_path = Path.Combine(Application.persistentDataPath, path);*/
-                        string path = string_result.Substring(string_result.IndexOf("C:"));
-                        image_texture = new Texture2D(2, 2);
-                        ImageConversion.LoadImage(image_texture, File.ReadAllBytes(path));
-                        generated_image.style.backgroundImage = image_texture;
-                    }
+                foreach (var result in imageResults)
+                {
+                    Debug.Log(result.ToString());
+                    string string_result = result.ToString();
+                    //string path = string_result.Substring(string_result.IndexOf("download_cache"));
+                    //var full_path = Path.Combine(Application.persistentDataPath, path);*/
+                    string path = string_result.Substring(string_result.IndexOf("C:"));
+                    image_texture = new Texture2D(2, 2);
+                    ImageConversion.LoadImage(image_texture, File.ReadAllBytes(path));
+                    generated_image.style.backgroundImage = image_texture;
                 }
             }
             
@@ -537,6 +534,7 @@ public class ImageGenerationWindow : EditorWindow
                     base_image_select.style.display = DisplayStyle.Flex;
                     base_image.style.display = DisplayStyle.Flex;
                     mask_image_select.style.display = DisplayStyle.Flex;
+                    image_resolution.style.display = DisplayStyle.None;
                     image_size.style.display = DisplayStyle.None;
                     image_to_image_size.style.display = DisplayStyle.Flex;
                     generate_button.style.display = DisplayStyle.Flex;
