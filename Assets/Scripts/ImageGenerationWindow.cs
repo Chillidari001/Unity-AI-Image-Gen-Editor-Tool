@@ -62,10 +62,10 @@ public class ImageGenerationWindow : EditorWindow
             ImageSize._512*/
     private enum image_quality
     {
-        Highest,
-        Standard
+        standard,
+        hd
     }
-    image_quality chosen_quality = image_quality.Standard;
+    image_quality chosen_quality = image_quality.standard;
     public enum Direction
     {
         North,
@@ -222,7 +222,7 @@ public class ImageGenerationWindow : EditorWindow
         image_generation_prompt.style.height = 50f;
         root.Add(image_generation_prompt);
 
-        image_resolution = new EnumField("Image Resolution", image_quality.Standard);
+        image_resolution = new EnumField("Image Resolution", image_quality.standard);
         root.Add(image_resolution);
         image_resolution.RegisterCallback<ChangeEvent<Enum>>((evt) =>
         {
@@ -333,8 +333,69 @@ public class ImageGenerationWindow : EditorWindow
             Debug.Log(result.Data[0].Url);*/
             if(chosen_function == tool_function.Text_To_Image)
             {
+                user_input = user_input.Insert(0, " \"");
+                user_input += "\"";
+                string num_images_str = num_images.ToString();
+                //num_images_str.Insert(0, "\"");
+                //num_images_str += "\"";
+                chosen_image_size = chosen_image_size.Insert(0, "\"");
+                chosen_image_size += "\"";
+                string chosen_quality_str = chosen_quality.ToString();
+                chosen_quality_str = chosen_quality_str.Insert(0, "\"");
+                chosen_quality_str += "\"";
+
+                string body = "{\"prompt\":" + user_input + ",\"n\":" + num_images_str + ",\"size\":" + chosen_image_size + ",\"quality\":" + chosen_quality_str + ",\"response_format\":\"url\"}";
+                Debug.Log(body);
+                //Debug.Log(body2);
+
+                // Prepare data for the POST request
+                var data = Encoding.ASCII.GetBytes(body);
+                Debug.Log(data);
+
+                var request = (HttpWebRequest)WebRequest.Create(url);
+                request.Method = "POST";
+                request.ContentType = "application/json";
+                request.ContentLength = data.Length;
+
+                // Authentication
+                if (api_key != null)
+                {
+                    ServicePointManager.Expect100Continue = true;
+                    ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
+
+                    request.PreAuthenticate = true;
+                    request.Headers.Add("Authorization", "Bearer " + api_key);
+                }
+                else
+                {
+                    request.Credentials = CredentialCache.DefaultCredentials;
+                }
+
+                // Perform request
+                using (var stream = request.GetRequestStream())
+                {
+                    stream.Write(data, 0, data.Length);
+                }
+
+                // Retrieve response
+                var response = (HttpWebResponse)request.GetResponse();
+                Debug.Log("Request response: " + response.StatusCode);
+
+                var response_string = new StreamReader(response.GetResponseStream()).ReadToEnd();
+                Debug.Log(response_string);
+
+                //deserialize json
+                dynamic json_response = JsonConvert.DeserializeObject<dynamic>(response_string);
+                Debug.Log(json_response.created);
+                Debug.Log(json_response.data);
+                Debug.Log(json_response.data[0].url);
+
+                string response_url = Convert.ToString(json_response.data[0].url);
+                Debug.Log(response_url);
+                EditorCoroutineUtility.StartCoroutineOwnerless(DownloadImage(response_url));
+                
                 //var request = new ImageGenerationRequest(user_input, Model.DallE_3, 1, null, responseFormat: ResponseFormat.Url, "256x256", null, null);
-                if (chosen_quality == image_quality.Standard)
+                /*if (chosen_quality == image_quality.standard)
                 {
                     //var request = new ImageGenerationRequest(user_input, OpenAI.Models.Model.DallE_3, 1, "standard", responseFormat: ResponseFormat.Url, chosen_image_size);
                     //var imageResults = await api.ImagesEndPoint.GenerateImageAsync(request);
@@ -350,67 +411,9 @@ public class ImageGenerationWindow : EditorWindow
                         ImageConversion.LoadImage(image_texture, File.ReadAllBytes(path));
                         generated_image.style.backgroundImage = image_texture;
                     }*/
-                    
-                    user_input = user_input.Insert(0, " \"");
-                    user_input += "\"";
-                    string num_images_str = num_images.ToString();
-                    //num_images_str.Insert(0, "\"");
-                    //num_images_str += "\"";
-                    chosen_image_size = chosen_image_size.Insert(0, "\"");
-                    chosen_image_size += "\"";
 
-                    string body = "{\"prompt\":" + user_input + ",\"n\":" + num_images_str + ",\"size\":" + chosen_image_size + ",\"response_format\":\"url\"}";
-                    Debug.Log(body);
-                    //Debug.Log(body2);
-
-                    // Prepare data for the POST request
-                    var data = Encoding.ASCII.GetBytes(body);
-                    Debug.Log(data);
-
-                    var request = (HttpWebRequest)WebRequest.Create(url);
-                    request.Method = "POST";
-                    request.ContentType = "application/json";
-                    request.ContentLength = data.Length;
-
-                    // Authentication
-                    if (api_key != null)
-                    {
-                        ServicePointManager.Expect100Continue = true;
-                        ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-
-                        request.PreAuthenticate = true;
-                        request.Headers.Add("Authorization", "Bearer " + api_key);
-                    }
-                    else
-                    {
-                        request.Credentials = CredentialCache.DefaultCredentials;
-                    }
-
-                    // Perform request
-                    using (var stream = request.GetRequestStream())
-                    {
-                        stream.Write(data, 0, data.Length);
-                    }
-
-                    // Retrieve response
-                    var response = (HttpWebResponse)request.GetResponse();
-                    Debug.Log("Request response: " + response.StatusCode);
-                    
-                    var response_string = new StreamReader(response.GetResponseStream()).ReadToEnd();
-                    Debug.Log(response_string);
-
-                    //deserialize json
-                    dynamic json_response = JsonConvert.DeserializeObject<dynamic>(response_string);
-                    Debug.Log(json_response.created);
-                    Debug.Log(json_response.data);
-                    Debug.Log(json_response.data[0].url);
-
-                    string response_url = Convert.ToString(json_response.data[0].url);
-                    Debug.Log(response_url);
-                    EditorCoroutineUtility.StartCoroutineOwnerless(DownloadImage(response_url));
-
-                }
-                if (chosen_quality == image_quality.Highest)
+            }
+                /*if (chosen_quality == image_quality.hd)
                 {
                     var request = new ImageGenerationRequest(user_input, OpenAI.Models.Model.DallE_3, 1, "hd", responseFormat: ResponseFormat.Url, chosen_image_size);
                     var imageResults = await api.ImagesEndPoint.GenerateImageAsync(request);
@@ -424,7 +427,7 @@ public class ImageGenerationWindow : EditorWindow
                         //generated_image.style.height = 1024;
                         /*var final_result = result.ToString();
                         string remove_text = "E:\\LearningProjects\\AT\\AT2\\file:\\";
-                        final_result.Replace(remove_text, "");*/
+                        final_result.Replace(remove_text, "");
 
                         //var raw_data = System.IO.File.ReadAllBytes(result.ToString());
                         //Texture2D tex = new Texture2D(2, 2);
@@ -438,14 +441,14 @@ public class ImageGenerationWindow : EditorWindow
                         Debug.Log(result.ToString());
                         string string_result = result.ToString();
                         //string path = string_result.Substring(string_result.IndexOf("download_cache"));
-                        //var full_path = Path.Combine(Application.persistentDataPath, path);*/
+                        //var full_path = Path.Combine(Application.persistentDataPath, path);
                         string path = string_result.Substring(string_result.IndexOf("C:"));
                         image_texture = new Texture2D(2, 2);
                         ImageConversion.LoadImage(image_texture, File.ReadAllBytes(path));
                         generated_image.style.backgroundImage = image_texture;
-                    }
-                }
-            }
+                    
+                }*/
+                
             if(chosen_function == tool_function.Image_To_Image_edit)
             {
                 var request = new ImageEditRequest(Path.GetFullPath(AssetDatabase.GetAssetPath(selected_texture)), Path.GetFullPath(AssetDatabase.GetAssetPath(mask_texture)), user_input, 1, size, null, responseFormat: ResponseFormat.Url, OpenAI.Models.Model.DallE_2);
@@ -482,28 +485,6 @@ public class ImageGenerationWindow : EditorWindow
                 }
             }
 
-        }
-        if (chosen_api == api_choice.Stable_Diffusion)
-        {
-            /*Debug.Log("Generate...");
-            //random seed
-            //seed = seed == -1 ? UnityEngine.Random.Range(0, 99999999) : seed;
-            string fit_str = fit ? "on" : "off";
-
-            //get null object
-            var init_img_obj = MyJsonConverter.Serialize(initimg);
-            string post_data = $"{{ 'prompt':'{user_input}','iterations':'{iterations}','steps':'{steps}','cfg_scale':'{cfg_scale}','sampler_name':'{sampler_name}','width':'{width}','height':'{height}','seed':'{seed}','variation_amount':'{variation_amount}', 'with_variations':'{with_variations}','initimg':{init_img_obj},'strength':'{strength}','fit':'{fit_str}','gfpgan_strength':'{gfpgan_strength}','upscale_level':'{upscale_level}','upscale_strength':'{upscale_strength}','initmg_name':'{initimg_name}'}}";
-            //fix single quotes
-            post_data = post_data.Replace("'", "\"");
-
-            Debug.Log(post_data);
-
-            //send post unitywebrequest
-            www = UnityWebRequest.Post(url, post_data);
-            www.SetRequestHeader("Content-Type", "application/json");
-            www.SendWebRequest();
-
-            EditorApplication.update += EditorWebRequestUpdate;*/
         }
     }
 
