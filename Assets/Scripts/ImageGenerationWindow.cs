@@ -23,6 +23,7 @@ using System.Net.Sockets;
 using UnityEditor.Search;
 using System.Text;
 using System.Net;
+using System.Net.Http;
 using Newtonsoft.Json;
 using Unity.EditorCoroutines.Editor;
 
@@ -66,6 +67,14 @@ public class ImageGenerationWindow : EditorWindow
         hd
     }
     image_quality chosen_quality = image_quality.standard;
+
+    private enum style
+    {
+        natural,
+        vivid
+    }
+    style chosen_style = style.natural;
+    EnumField style_field;
     public enum Direction
     {
         North,
@@ -131,6 +140,8 @@ public class ImageGenerationWindow : EditorWindow
     */
 
     string url = "https://api.openai.com/v1/images/generations";
+    string image_edit_url = "https://api.openai.com/v1/images/edits";
+    string image_variation_url = "https://api.openai.com/v1/images/variations";
 
     private void OnEnable()
     {
@@ -169,7 +180,7 @@ public class ImageGenerationWindow : EditorWindow
         //VisualElement labelFromUXML = m_VisualTreeAsset.Instantiate();
         //root.Add(labelFromUXML);
 
-        API = new EnumField("Image Generation API", api_choice.Open_AI);
+        API = new EnumField("Image Generation API:", api_choice.Open_AI);
         root.Add(API);
         API.RegisterCallback<ChangeEvent<Enum>>((evt) =>
         {
@@ -190,7 +201,7 @@ public class ImageGenerationWindow : EditorWindow
         root.Add(save_api_key_button);
         save_api_key_button.clicked += UseAPIKey;
 
-        function_choice = new EnumField("Function Choice", tool_function.Text_To_Image);
+        function_choice = new EnumField("Function Choice:", tool_function.Text_To_Image);
         root.Add(function_choice);
         function_choice.RegisterCallback<ChangeEvent<Enum>>((evt) =>
         {
@@ -199,7 +210,7 @@ public class ImageGenerationWindow : EditorWindow
             Debug.Log(chosen_function);
         });
 
-        base_image_select = new UnityEditor.UIElements.ObjectField("Base Image Select");
+        base_image_select = new UnityEditor.UIElements.ObjectField("Base Image Select:");
         base_image_select.objectType = typeof(Texture2D);
         root.Add(base_image_select);
         base_image_select.RegisterValueChangedCallback<UnityEngine.Object>(ImageSelected);
@@ -212,7 +223,7 @@ public class ImageGenerationWindow : EditorWindow
         //generated_image.scaleMode = ScaleMode.ScaleToFit;
         root.Add(base_image);
 
-        mask_image_select = new UnityEditor.UIElements.ObjectField("Mask Image Select");
+        mask_image_select = new UnityEditor.UIElements.ObjectField("Mask Image Select:");
         mask_image_select.objectType = typeof(Texture2D);
         root.Add(mask_image_select);
         mask_image_select.RegisterValueChangedCallback<UnityEngine.Object>(MaskSelected);
@@ -222,7 +233,7 @@ public class ImageGenerationWindow : EditorWindow
         image_generation_prompt.style.height = 50f;
         root.Add(image_generation_prompt);
 
-        image_resolution = new EnumField("Image Resolution", image_quality.standard);
+        image_resolution = new EnumField("Image Resolution:", image_quality.standard);
         root.Add(image_resolution);
         image_resolution.RegisterCallback<ChangeEvent<Enum>>((evt) =>
         {
@@ -231,7 +242,16 @@ public class ImageGenerationWindow : EditorWindow
             Debug.Log(chosen_quality);
         });
 
-        num_of_images = new DropdownField("Number of images", new List<string> { "1", "2", "3", "4" }, 0);
+        style_field = new EnumField("Style:", style.natural);
+        root.Add(style_field);
+        style_field.RegisterCallback<ChangeEvent<Enum>>((evt) =>
+        {
+            style_field.value = evt.newValue;
+            chosen_style = (style)image_resolution.value;
+            Debug.Log(chosen_style);
+        });
+
+        num_of_images = new DropdownField("Number of images:", new List<string> { "1", "2", "3", "4" }, 0);
         num_of_images.index = 0;
         root.Add(num_of_images);
         num_of_images.RegisterValueChangedCallback((evt) =>
@@ -240,7 +260,7 @@ public class ImageGenerationWindow : EditorWindow
             Debug.Log(num_images);
         });
 
-        image_size = new DropdownField("Image Size", new List<string> { "256x256", "512x512", "1024x1024", "1024x1792", "1792x1024" }, 0);
+        image_size = new DropdownField("Image Size:", new List<string> { "256x256", "512x512", "1024x1024", "1024x1792", "1792x1024" }, 0);
         image_size.index = 0;
         root.Add(image_size);
         image_size.RegisterValueChangedCallback((evt) =>
@@ -249,7 +269,7 @@ public class ImageGenerationWindow : EditorWindow
             Debug.Log(chosen_image_size);
         });
         
-        image_to_image_size = new EnumField("Image Size", ImageSize.Small);
+        image_to_image_size = new EnumField("Image Size:", ImageSize.Small);
         root.Add(image_to_image_size);
         image_to_image_size.RegisterCallback<ChangeEvent<Enum>>((evt) =>
         {
@@ -343,8 +363,11 @@ public class ImageGenerationWindow : EditorWindow
                 string chosen_quality_str = chosen_quality.ToString();
                 chosen_quality_str = chosen_quality_str.Insert(0, "\"");
                 chosen_quality_str += "\"";
+                string chosen_style_str = chosen_style.ToString();
+                chosen_style_str = chosen_style_str.Insert(0, "\"");
+                chosen_style_str += "\"";
 
-                string body = "{\"prompt\":" + user_input + ",\"n\":" + num_images_str + ",\"size\":" + chosen_image_size + ",\"quality\":" + chosen_quality_str + ",\"response_format\":\"url\"}";
+                string body = "{\"prompt\":" + user_input + ",\"n\":" + num_images_str + ",\"size\":" + chosen_image_size + ",\"quality\":" + chosen_quality_str + ", \"style\":" + chosen_style_str + ",\"model\": \"dall-e-3\",\"response_format\":\"url\"}";
                 Debug.Log(body);
                 //Debug.Log(body2);
 
@@ -393,96 +416,133 @@ public class ImageGenerationWindow : EditorWindow
                 string response_url = Convert.ToString(json_response.data[0].url);
                 Debug.Log(response_url);
                 EditorCoroutineUtility.StartCoroutineOwnerless(DownloadImage(response_url));
-                
-                //var request = new ImageGenerationRequest(user_input, Model.DallE_3, 1, null, responseFormat: ResponseFormat.Url, "256x256", null, null);
-                /*if (chosen_quality == image_quality.standard)
-                {
-                    //var request = new ImageGenerationRequest(user_input, OpenAI.Models.Model.DallE_3, 1, "standard", responseFormat: ResponseFormat.Url, chosen_image_size);
-                    //var imageResults = await api.ImagesEndPoint.GenerateImageAsync(request);
-
-                    /*foreach (var result in imageResults)
-                    {
-                        Debug.Log(result.ToString());
-                        string string_result = result.ToString();
-                        //string path = string_result.Substring(string_result.IndexOf("download_cache"));
-                        //var full_path = Path.Combine(Application.persistentDataPath, path);
-                        string path = string_result.Substring(string_result.IndexOf("C:"));
-                        image_texture = new Texture2D(2, 2);
-                        ImageConversion.LoadImage(image_texture, File.ReadAllBytes(path));
-                        generated_image.style.backgroundImage = image_texture;
-                    }*/
 
             }
-                /*if (chosen_quality == image_quality.hd)
-                {
-                    var request = new ImageGenerationRequest(user_input, OpenAI.Models.Model.DallE_3, 1, "hd", responseFormat: ResponseFormat.Url, chosen_image_size);
-                    var imageResults = await api.ImagesEndPoint.GenerateImageAsync(request);
-
-                    foreach (var result in imageResults)
-                    {
-                        Debug.Log(result.ToString());
-                        //DownloadImage(result);
-                        //generated_image.style.backgroundImage = AssetDatabase.LoadAssetAtPath<Texture2D>(result);
-                        //generated_image.style.width = 1024;
-                        //generated_image.style.height = 1024;
-                        /*var final_result = result.ToString();
-                        string remove_text = "E:\\LearningProjects\\AT\\AT2\\file:\\";
-                        final_result.Replace(remove_text, "");
-
-                        //var raw_data = System.IO.File.ReadAllBytes(result.ToString());
-                        //Texture2D tex = new Texture2D(2, 2);
-                        //ImageConversion.LoadImage(tex, File.ReadAllBytes(result));
-                        //tex.LoadImage(File.ReadAllBytes(result));
-                        //generated_image.style.backgroundImage = tex;
-                        //Assert.IsNotNull(generated_image.style.backgroundImage);
-
-                        //var bytes = System.IO.File.LoadAllBytes(result);
-
-                        Debug.Log(result.ToString());
-                        string string_result = result.ToString();
-                        //string path = string_result.Substring(string_result.IndexOf("download_cache"));
-                        //var full_path = Path.Combine(Application.persistentDataPath, path);
-                        string path = string_result.Substring(string_result.IndexOf("C:"));
-                        image_texture = new Texture2D(2, 2);
-                        ImageConversion.LoadImage(image_texture, File.ReadAllBytes(path));
-                        generated_image.style.backgroundImage = image_texture;
-                    
-                }*/
                 
             if(chosen_function == tool_function.Image_To_Image_edit)
             {
-                var request = new ImageEditRequest(Path.GetFullPath(AssetDatabase.GetAssetPath(selected_texture)), Path.GetFullPath(AssetDatabase.GetAssetPath(mask_texture)), user_input, 1, size, null, responseFormat: ResponseFormat.Url, OpenAI.Models.Model.DallE_2);
-                var imageResults = await api.ImagesEndPoint.CreateImageEditAsync(request);
 
-                foreach (var result in imageResults)
+                user_input = user_input.Insert(0, " \"");
+                user_input += "\"";
+                string num_images_str = num_images.ToString();
+                //num_images_str.Insert(0, "\"");
+                //num_images_str += "\"";
+                //chosen_image_size = chosen_image_size.Insert(0, "\"");
+                //chosen_image_size += "\"";
+                string chosen_style_str = chosen_style.ToString();
+                chosen_style_str = chosen_style_str.Insert(0, "\"");
+                chosen_style_str += "\"";
+                
+                string texture_path = Path.Combine(Directory.GetCurrentDirectory(), AssetDatabase.GetAssetPath(selected_texture));
+                texture_path = texture_path.Replace("/", "\\");
+                texture_path = texture_path.Insert(0, "\"");
+                texture_path += "\"";
+                string mask_path = Path.Combine(Directory.GetCurrentDirectory(), AssetDatabase.GetAssetPath(mask_texture));
+                mask_path = mask_path.Replace("/", "\\");
+                mask_path = mask_path.Insert(0, "\"");
+                mask_path += "\"";
+
+                var httpClient = new HttpClient();
+                var multipartContent = new MultipartFormDataContent();
+
+                // Add image file
+                var imageContent = new ByteArrayContent(File.ReadAllBytes(Path.Combine(Directory.GetCurrentDirectory(), AssetDatabase.GetAssetPath(selected_texture))));
+                imageContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+                multipartContent.Add(imageContent, "image", "image.png");
+
+                // Add mask file, if applicable
+                var maskContent = new ByteArrayContent(File.ReadAllBytes(Path.Combine(Directory.GetCurrentDirectory(), AssetDatabase.GetAssetPath(mask_texture))));
+                maskContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+                multipartContent.Add(maskContent, "mask", "mask.png");
+
+                // Add other parameters
+                multipartContent.Add(new StringContent(user_input), "prompt");
+                multipartContent.Add(new StringContent(num_images.ToString()), "n");
+                multipartContent.Add(new StringContent(chosen_image_size), "size");
+                multipartContent.Add(new StringContent("url"), "response_format"); // Assuming you're sending these exact keys
+
+                // Setup request
+                var request = new HttpRequestMessage(HttpMethod.Post, image_edit_url);
+                request.Headers.Add("Authorization", "Bearer " + api_key);
+                request.Content = multipartContent;
+
+                // Send request
+                var response = await httpClient.SendAsync(request);
+
+                // Check response
+                if (response.IsSuccessStatusCode)
                 {
-                    Debug.Log(result.ToString());
-                    string string_result = result.ToString();
-                    //string path = string_result.Substring(string_result.IndexOf("download_cache"));
-                    //var full_path = Path.Combine(Application.persistentDataPath, path);*/
-                    string path = string_result.Substring(string_result.IndexOf("C:"));
-                    image_texture = new Texture2D(2, 2);
-                    ImageConversion.LoadImage(image_texture, File.ReadAllBytes(path));
-                    generated_image.style.backgroundImage = image_texture;
+                    var responseString = await response.Content.ReadAsStringAsync();
+                    Debug.Log(responseString);
+                    // Process response
+                    // Assuming responseString contains the JSON response
+                    dynamic jsonResponse = JsonConvert.DeserializeObject(responseString);
+                    // Extract the URL
+                    string responseUrl = jsonResponse.data[0].url.ToString();
+                    Debug.Log("Image URL: " + responseUrl);
+                    EditorCoroutineUtility.StartCoroutineOwnerless(DownloadImage(responseUrl));
+                }
+                else
+                {
+                    // Handle error
+                    var errorResponseString = await response.Content.ReadAsStringAsync();
+                    Debug.LogError($"Error: {response.StatusCode}. Details: {errorResponseString}");
                 }
             }
 
             if (chosen_function == tool_function.Image_To_Image_Variation)
             {
-                var request = new ImageVariationRequest(Path.GetFullPath(AssetDatabase.GetAssetPath(selected_texture)), 1, size, null, responseFormat: ResponseFormat.Url, OpenAI.Models.Model.DallE_2);
-                var imageResults = await api.ImagesEndPoint.CreateImageVariationAsync(request);
+                string chosen_style_str = chosen_style.ToString();
+                chosen_style_str = chosen_style_str.Insert(0, "\"");
+                chosen_style_str += "\"";
 
-                foreach (var result in imageResults)
+                string texture_path = Path.Combine(Directory.GetCurrentDirectory(), AssetDatabase.GetAssetPath(selected_texture));
+                texture_path = texture_path.Replace("/", "\\");
+                texture_path = texture_path.Insert(0, "\"");
+                texture_path += "\"";
+
+
+                var httpClient = new HttpClient();
+                var multipartContent = new MultipartFormDataContent();
+
+                // Add image file
+                var imageContent = new ByteArrayContent(File.ReadAllBytes(Path.Combine(Directory.GetCurrentDirectory(), AssetDatabase.GetAssetPath(selected_texture))));
+                imageContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
+                multipartContent.Add(imageContent, "image", "image.png");
+
+                // Add other parameters
+                multipartContent.Add(new StringContent(num_images.ToString()), "n");
+                multipartContent.Add(new StringContent(chosen_image_size), "size");
+                multipartContent.Add(new StringContent("url"), "response_format"); // Assuming you're sending these exact keys
+
+                // Setup request
+                var request = new HttpRequestMessage(HttpMethod.Post, image_variation_url);
+                request.Headers.Add("Authorization", "Bearer " + api_key);
+                request.Content = multipartContent;
+
+                // Send request
+                var response = await httpClient.SendAsync(request);
+
+                // Check response
+                if (response.IsSuccessStatusCode)
                 {
-                    Debug.Log(result.ToString());
-                    string string_result = result.ToString();
-                    //string path = string_result.Substring(string_result.IndexOf("download_cache"));
-                    //var full_path = Path.Combine(Application.persistentDataPath, path);*/
-                    string path = string_result.Substring(string_result.IndexOf("C:"));
-                    image_texture = new Texture2D(2, 2);
-                    ImageConversion.LoadImage(image_texture, File.ReadAllBytes(path));
-                    generated_image.style.backgroundImage = image_texture;
+                    var responseString = await response.Content.ReadAsStringAsync();
+                    Debug.Log(responseString);
+                    // Process response
+                    // Assuming responseString contains the JSON response
+                    dynamic jsonResponse = JsonConvert.DeserializeObject(responseString);
+                    // Extract the URL
+                    string responseUrl = jsonResponse.data[0].url.ToString();
+                    Debug.Log("Image URL: " + responseUrl);
+                    EditorCoroutineUtility.StartCoroutineOwnerless(DownloadImage(responseUrl));
                 }
+                else
+                {
+                    // Handle error
+                    var errorResponseString = await response.Content.ReadAsStringAsync();
+                    Debug.LogError($"Error: {response.StatusCode}. Details: {errorResponseString}");
+                }
+               
             }
 
         }
@@ -602,7 +662,8 @@ public class ImageGenerationWindow : EditorWindow
                     base_image.style.display = DisplayStyle.None;
                     mask_image_select.style.display = DisplayStyle.None;
                     image_resolution.style.display = DisplayStyle.Flex;
-                    num_of_images.style.display = DisplayStyle.Flex;
+                    style_field.style.display = DisplayStyle.Flex;
+                    num_of_images.style.display = DisplayStyle.None;
                     image_size.style.display = DisplayStyle.Flex;
                     image_to_image_size.style.display = DisplayStyle.None;
                     generate_button.style.display = DisplayStyle.Flex;
@@ -620,8 +681,10 @@ public class ImageGenerationWindow : EditorWindow
                     base_image.style.display = DisplayStyle.Flex;
                     mask_image_select.style.display = DisplayStyle.Flex;
                     image_resolution.style.display = DisplayStyle.None;
-                    image_size.style.display = DisplayStyle.None;
-                    image_to_image_size.style.display = DisplayStyle.Flex;
+                    style_field.style.display = DisplayStyle.None;
+                    num_of_images.style.display = DisplayStyle.None;
+                    image_size.style.display = DisplayStyle.Flex;
+                    image_to_image_size.style.display = DisplayStyle.None;
                     generate_button.style.display = DisplayStyle.Flex;
                     generated_image.style.display = DisplayStyle.Flex;
                     save_button.style.display = DisplayStyle.Flex;
@@ -637,8 +700,10 @@ public class ImageGenerationWindow : EditorWindow
                     base_image.style.display = DisplayStyle.Flex;
                     mask_image_select.style.display = DisplayStyle.None;
                     image_resolution.style.display = DisplayStyle.None;
-                    image_size.style.display = DisplayStyle.None;
-                    image_to_image_size.style.display = DisplayStyle.Flex;
+                    style_field.style.display = DisplayStyle.None;
+                    num_of_images.style.display = DisplayStyle.None;
+                    image_size.style.display = DisplayStyle.Flex;
+                    image_to_image_size.style.display = DisplayStyle.None;
                     generate_button.style.display = DisplayStyle.Flex;
                     generated_image.style.display = DisplayStyle.Flex;
                     save_button.style.display = DisplayStyle.Flex;
@@ -665,6 +730,7 @@ public class ImageGenerationWindow : EditorWindow
             base_image.style.display = DisplayStyle.None;
             mask_image_select.style.display = DisplayStyle.None;
             image_resolution.style.display = DisplayStyle.None;
+            style_field.style.display = DisplayStyle.None;
             num_of_images.style.display = DisplayStyle.None;
             image_size.style.display = DisplayStyle.None;
             image_to_image_size.style.display = DisplayStyle.None;
