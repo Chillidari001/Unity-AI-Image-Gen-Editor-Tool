@@ -109,39 +109,11 @@ public class ImageGenerationWindow : EditorWindow
     //private OpenAIAPI api;
     // private List<ChatMessage> messages;
 
-    //FOR STABLE DIFFUSION IMPLEMENTATION USING INVOKEAI BACKEND
-    //SCRAPPED SCRAPPED SCRAPPED SCRAPPED SCRAPPED
-    //---------------------------------------------------------
-    /*
-    static UnityWebRequest www;
-    static string url = "http://127.0.0.1:9090/";
-    static string sd_root_folder = "";*/
-
-    /*{"prompt":"empty","iterations":"1","steps":"55","cfg_scale":"7.5","sampler_name":"k_lms","width":"512","height":"512","seed":"-1","variation_amount":"0",
-     "with_variations":"","initimg":null,"strength":"0.75","fit":"on","gfpgan_strength":"0.8","upscale_level":"","upscale_strength":"0.75","initmg_name":""}*/
-    /*
-    //string used in original string user_input from above
-    private int iterations = 1;
-    private int steps = 20;
-    private float cfg_scale = 7.5f;
-    private string sampler_name = "k_lms"; //TODO dropdown list?
-    private int width = 512;
-    private int height = 512;
-    private int seed = -1; //TODO -1 as random?
-    private float variation_amount = 0;
-    private string with_variations = "";
-    private System.Object initimg = null; //TODO upload image?
-    private float strength = 0.75f;
-    private bool fit = true; //TODO as "on/off" toggle
-    private float gfpgan_strength = 0.8f;
-    private string upscale_level = "";
-    private float upscale_strength = 0.75f;
-    private string initimg_name = "";
-    */
-
     string url = "https://api.openai.com/v1/images/generations";
     string image_edit_url = "https://api.openai.com/v1/images/edits";
     string image_variation_url = "https://api.openai.com/v1/images/variations";
+
+    Label help_label;
 
     private void OnEnable()
     {
@@ -298,25 +270,20 @@ public class ImageGenerationWindow : EditorWindow
         root.Add(save_button);
         save_button.clicked += SaveImage;
 
-    }
+        // Multi-paragraph label
+        var helpText = "This is a collection of what will likely be the most common errors recieved when using this tool. For a more complete understanding of the tool or any errors you may come across, a brief read of the OpenAI API documentation will help greatly but it's definitely not needed. \n\n" +
+                       "Q: Why do I get a 401 error when trying to generate an image?\n" +
+                       "A: A 401 error likely means that you haven't used an API key. Remember to get your API Key and use it before attempting to generate images.\n\n" +
+                       "Q: Why am I getting a bad request error when generating an image? I used my OpenAI API Key and selected all the parameters!\n" +
+                       "A: There is an error in the way I'm handling the data, the options selected by the user, when converting them to strings and adding them to the header of the request. For now, whenever you generate an image and wish to generate another with the same resolution (Image Size), please select another resolution and then reselect your intended resolution.\n\n" +
+                       "Q: Why isn't an image being generated when using Image To Image Variation?\n" +
+                       "A: This is likely because the mask image you are trying to use is not the same resolution as the original image you selected. Please ensure they are both the exact same resolution.\n\n";
+        help_label = new Label(helpText);
+        help_label.style.whiteSpace = WhiteSpace.Normal;  // Ensures text wrapping
+        help_label.style.unityTextAlign = TextAnchor.UpperLeft;
 
-    public void OnGUI()
-    {
+        root.Add(help_label);
 
-        //num_of_tabs = GUILayout.Toolbar(num_of_tabs, tab_names);
-        /*float padding = 100;
-        Rect area = new Rect(padding, padding,
-             position.width - padding * 2f, position.height - padding * 2f);
-
-        GUILayout.BeginArea(area);
-       
-        GUILayout.EndArea();*/
-
-        if(help_selected)
-        {
-            GUILayout.Label("TEST");
-            GUILayout.FlexibleSpace();
-        }
     }
 
     private async void GenerateImage()
@@ -649,6 +616,7 @@ public class ImageGenerationWindow : EditorWindow
     {
         if(help_selected == false)
         {
+            help_label.style.display = DisplayStyle.None;
             if (chosen_api == api_choice.Open_AI)
             {
                 if (chosen_function == tool_function.Text_To_Image)
@@ -721,6 +689,8 @@ public class ImageGenerationWindow : EditorWindow
         
         if(help_selected == true)
         {
+            help_label.style.display = DisplayStyle.Flex;
+            
             API.style.display = DisplayStyle.None;
             api_key_input.style.display = DisplayStyle.None;
             save_api_key_button.style.display = DisplayStyle.None;
