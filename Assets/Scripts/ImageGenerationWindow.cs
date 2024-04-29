@@ -417,7 +417,7 @@ public class ImageGenerationWindow : EditorWindow
                 imageContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
                 multipartContent.Add(imageContent, "image", "image.png");
 
-                // Add mask file, if applicable
+                // Add mask file
                 var maskContent = new ByteArrayContent(File.ReadAllBytes(Path.Combine(Directory.GetCurrentDirectory(), AssetDatabase.GetAssetPath(mask_texture))));
                 maskContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/png");
                 multipartContent.Add(maskContent, "mask", "mask.png");
@@ -426,7 +426,7 @@ public class ImageGenerationWindow : EditorWindow
                 multipartContent.Add(new StringContent(user_input), "prompt");
                 multipartContent.Add(new StringContent(num_images.ToString()), "n");
                 multipartContent.Add(new StringContent(chosen_image_size), "size");
-                multipartContent.Add(new StringContent("url"), "response_format"); // Assuming you're sending these exact keys
+                multipartContent.Add(new StringContent("url"), "response_format");
 
                 // Setup request
                 var request = new HttpRequestMessage(HttpMethod.Post, image_edit_url);
